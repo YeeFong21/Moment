@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import EntryCard from '@/components/EntryCard'
+import type { Database } from '@/lib/types/database'
 
 interface PageProps {
     params: Promise<{ date: string }>
@@ -23,13 +24,19 @@ export default async function DatePage({ params }: PageProps) {
         .select('*')
         .eq('happened_on', date)
         .order('created_at', { ascending: false })
+        .returns<(Database['public']['Tables']['entries']['Row'])[]>()
 
     // Fetch images for all entries
     const entryIds = entries?.map(e => e.id) || []
-    const { data: images } = await supabase
-        .from('entry_images')
-        .select('*')
-        .in('entry_id', entryIds)
+
+    // Only query images if we have entries
+    const { data: images } = entryIds.length > 0
+        ? await supabase
+            .from('entry_images')
+            .select('*')
+            .in('entry_id', entryIds)
+            .returns<(Database['public']['Tables']['entry_images']['Row'])[]>()
+        : { data: [] }
 
     const entriesWithImages = entries?.map(entry => ({
         ...entry,

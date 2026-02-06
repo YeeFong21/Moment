@@ -16,6 +16,7 @@ export default async function HomePage() {
     const { data: entries } = await supabase
         .from('entries')
         .select('happened_on')
+        .returns<{ happened_on: string }[]>()
 
     const markedDates = entries ? [...new Set(entries.map(e => e.happened_on))] : []
 
