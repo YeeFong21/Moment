@@ -18,7 +18,8 @@ export async function createEntry(formData: FormData) {
     const type = formData.get('type') as 'photo' | 'quote'
     const text = formData.get('text') as string
     const happenedOn = formData.get('happened_on') as string
-    const files = formData.getAll('photos') as File[]
+    const imagePathsJson = formData.get('image_paths') as string
+    const imagePaths = imagePathsJson ? JSON.parse(imagePathsJson) : []
 
     // Create entry
     const { data: entry, error: entryError } = await supabase
@@ -36,35 +37,21 @@ export async function createEntry(formData: FormData) {
         return { error: entryError.message }
     }
 
-    // If photo type, upload images
-    if (type === 'photo' && files.length > 0) {
-        for (let i = 0; i < files.length; i++) {
-            const file = files[i]
-            if (!file || file.size === 0) continue
+    // If photo type, link uploaded images
+    if (type === 'photo' && imagePaths.length > 0) {
+        const imageRecords = imagePaths.map((path: string) => ({
+            entry_id: entry.id,
+            storage_path: path,
+        }))
 
-            const fileExt = file.name.split('.').pop()
-            const fileName = `${entry.id}/${i + 1}.${fileExt}`
-            const storagePath = `entries/${fileName}`
+        const { error: imagesError } = await supabase
+            .from('entry_images')
+            .insert(imageRecords)
 
-            // Upload to storage
-            const { error: uploadError } = await supabase.storage
-                .from('memories')
-                .upload(storagePath, file, {
-                    upsert: false
-                })
-
-            if (uploadError) {
-                console.error('Upload error:', uploadError)
-                continue
-            }
-
-            // Create entry_image record
-            await supabase
-                .from('entry_images')
-                .insert({
-                    entry_id: entry.id,
-                    storage_path: storagePath,
-                })
+        if (imagesError) {
+            console.error('Error linking images:', imagesError)
+            // Consider deleting the entry or images if this fails, 
+            // but for now let's just log it.
         }
     }
 

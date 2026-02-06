@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { createEntry } from '@/app/date/[date]/new/actions'
+import { createClient } from '@/lib/supabase/client'
 
 interface UploadFormProps {
     date: string
@@ -65,7 +66,61 @@ export default function UploadForm({ date }: UploadFormProps) {
                 </h1>
                 <p className="text-gray-400 mb-8">{formattedDate}</p>
 
-                <form action={handleSubmit} className="space-y-6">
+                <form onSubmit={async (e) => {
+                    e.preventDefault()
+                    setLoading(true)
+                    setError(null)
+
+                    try {
+                        const formData = new FormData(e.currentTarget)
+                        let imagePaths: string[] = []
+
+                        if (type === 'photo') {
+                            const fileInput = e.currentTarget.querySelector('input[type="file"]') as HTMLInputElement
+                            const files = fileInput?.files
+
+                            if (files && files.length > 0) {
+                                const supabase = createClient()
+                                const { data: { user } } = await supabase.auth.getUser()
+
+                                if (!user) throw new Error('You must be logged in')
+
+                                // Upload all files first
+                                const uploadPromises = Array.from(files).map(async (file) => {
+                                    const fileExt = file.name.split('.').pop()
+                                    // Use a simpler path strategy: user_id/timestamp-random.ext
+                                    const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`
+                                    const storagePath = `${user.id}/${fileName}`
+
+                                    const { error: uploadError } = await supabase.storage
+                                        .from('memories')
+                                        .upload(storagePath, file)
+
+                                    if (uploadError) throw uploadError
+                                    return storagePath
+                                })
+
+                                imagePaths = await Promise.all(uploadPromises)
+                            }
+                        }
+
+                        // Append paths to formData
+                        formData.append('image_paths', JSON.stringify(imagePaths))
+
+                        // We don't need to send the massive files to the server action anymore
+                        formData.delete('photos')
+
+                        const result = await createEntry(formData)
+                        if (result?.error) {
+                            setError(result.error)
+                            setLoading(false)
+                        }
+                    } catch (err: any) {
+                        console.error('Upload error:', err)
+                        setError(err.message || 'Failed to upload images')
+                        setLoading(false)
+                    }
+                }} className="space-y-6">
                     <input type="hidden" name="happened_on" value={date} />
 
                     <div className="flex gap-4">
